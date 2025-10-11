@@ -15,7 +15,7 @@
 - JavaScript
 - Node js
 - Express
-- Cheerio (pour crawling (trés long (##il est en BETA##))
+- Cheerio (pour crawling (trés long (il est en BETA mon script))
 
 ## SI VOUS VOULEZ CONTRIBUER A SE PROJ
 
