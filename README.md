@@ -1,7 +1,5 @@
 # OpenWeb Search Engine
 
-Un moteur de recherche moderne et sécurisé avec une interface élégante inspirée des dernières tendances du web.
-
 ## Les Fonctions
 
 - Recherche web fonctionelle (a vous de désidez)
