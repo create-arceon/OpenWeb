@@ -59,7 +59,6 @@
     <script src="security.js" type="module"></script>
     <script src="search.js" type="module"></script>
     <script>
-    // Sticky header hide on scroll, show on mouseover top
     let lastScrollY = window.scrollY;
     const header = document.getElementById('main-header');
     let hideTimeout = null;
@@ -80,26 +79,19 @@
             hideTimeout = setTimeout(() => header.classList.add('header-hidden'), 400);
         }
     });
-
-    // UI Controls
-    // Onglets (tabs) UI
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', e => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            // Pour l’instant, seul "web" fonctionne, les autres affichent un message
             if (btn.dataset.type !== 'web') {
                 document.getElementById('results').innerHTML = '<div class="error">Ce type de recherche n\'est pas encore disponible.</div>';
             } else {
-                // Relancer la recherche web
                 const q = document.getElementById('searchInput').value;
                 if (q) window.dispatchEvent(new Event('search:rerun'));
             }
         });
     });
-    // Relancer la recherche web si onglet web
     window.addEventListener('search:rerun', () => {
-        // search.js va gérer la recherche
         if (document.querySelector('.tab-btn.active').dataset.type === 'web') {
             document.getElementById('searchForm').dispatchEvent(new Event('submit', {cancelable: true, bubbles: true}));
         }
