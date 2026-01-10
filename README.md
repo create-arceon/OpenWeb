@@ -30,7 +30,7 @@ cd OpenWeb
 
 3. Ajoutez le repository original comme remote
 ```bash
-git remote add upstream https://github.com/original-owner/OpenWeb.git
+git remote add upstream https://github.com/creat-dev/OpenWeb.git
 ```
 
 4. Installez les dépendances
