@@ -54,7 +54,7 @@ Modifiez le fichier `initCrawler.js` pour ajouter vos URLs :
 const sitesToCrawl = [
     'https://votre-site.com',
     'https://autre-site.com',
-    'https://https://social.mtdv.me/ne-cliquer-pas
+    'https://https://social.mtdv.me/ne-cliquer-pas'
 ];
 ```
 
