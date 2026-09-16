@@ -1,307 +1,324 @@
-document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Éléments DOM & Paramètres URL
-    const params = new URLSearchParams(window.location.search);
-    const query = params.get('q') || '';
-    const page = parseInt(params.get('page'), 10) || 1;
-    const resultsPerPage = 50;
+(() => {
+  "use strict";
 
-    const resultsContainer = document.getElementById('results');
-    const loader = document.getElementById('loader');
-    const searchInput = document.getElementById('searchInput');
-    let currentTab = localStorage.getItem('searchTab') || 'web';
+  const params = new URLSearchParams(location.search);
+  const query = (params.get("q") || "").trim();
+  let tab = params.get("tab") || "web";
+  let page = Math.max(1, parseInt(params.get("page") || "1", 10) || 1);
+  const perPage = 10;
 
-    // 2. Gestion de la barre de recherche
-    if (searchInput) {
-        searchInput.value = query;
-        const searchForm = document.getElementById('searchForm');
-        if (searchForm) {
-            searchForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const searchQuery = searchInput.value.trim();
-                if (searchQuery) {
-                    window.location.href = `/search.html?q=${encodeURIComponent(searchQuery)}`;
-                }
-            });
-        }
-    }
+  const input = document.getElementById("search-input");
+  const results = document.getElementById("results");
+  const pagination = document.getElementById("pagination");
+  const summary = document.getElementById("summary");
+  const sort = document.getElementById("sort");
+  const recentBox = document.getElementById("recent-searches");
 
-    if (loader) loader.style.display = 'block';
+  if (input) input.value = query;
 
-    // 3. Récupération des données
-    let data = [];
+  const esc = s => String(s ?? "");
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+
+  function normalizeUrl(raw) {
     try {
-        const res = await fetch('/searchData.json');
-        if (!res.ok) throw new Error('Erreur HTTP');
-        data = await res.json();
-    } catch (e) {
-        if (loader) loader.style.display = 'none';
-        if (resultsContainer) {
-            resultsContainer.innerHTML = '<div style="color:red;text-align:center;padding:2rem;">Erreur lors du chargement des données de recherche.</div>';
-        }
-        return;
+      const u = new URL(raw, location.origin);
+      u.hash = "";
+      u.hostname = u.hostname.toLowerCase();
+      [
+        "utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+        "gclid","fbclid","msclkid","mc_cid","mc_eid"
+      ].forEach(k => u.searchParams.delete(k));
+      if (u.pathname.length > 1) u.pathname = u.pathname.replace(/\/+$/, "");
+      return u.toString();
+    } catch { return esc(raw).trim().replace(/#.*$/, "").replace(/\/$/, ""); }
+  }
+
+  function domainOf(url) {
+    try { return new URL(url, location.origin).hostname.replace(/^www\./, ""); }
+    catch { return ""; }
+  }
+
+  function textOf(x) {
+    return [
+      x.title, x.name, x.description, x.snippet, x.content,
+      x.text, x.category, x.categories, x.brand, x.source
+    ].filter(Boolean).join(" ");
+  }
+
+  function score(x) {
+    const hay = textOf(x).toLowerCase();
+    let n = Number(x.score) || 0;
+    for (const t of terms) {
+      if (String(x.title || x.name || "").toLowerCase().includes(t)) n += 12;
+      if (String(x.description || x.snippet || "").toLowerCase().includes(t)) n += 6;
+      if (hay.includes(t)) n += 2;
+    }
+    return n;
+  }
+
+  function dedupe(list) {
+    const seenUrl = new Set(), seenContent = new Set(), out = [];
+    for (const x of list) {
+      const url = normalizeUrl(x.url || x.link || x.href || "");
+      const title = esc(x.title || x.name || "").toLowerCase().replace(/\s+/g, " ").trim();
+      const desc = esc(x.description || x.snippet || x.content || "").toLowerCase()
+        .replace(/\s+/g, " ").trim().slice(0, 220);
+      const contentKey = title + "|" + desc;
+      if (url && seenUrl.has(url)) continue;
+      if (contentKey !== "|" && seenContent.has(contentKey)) continue;
+      if (url) seenUrl.add(url);
+      if (contentKey !== "|") seenContent.add(contentKey);
+      out.push({...x, __url:url, __score:score(x)});
+    }
+    return out;
+  }
+
+  function hasType(x, type) {
+    const s = [
+      x.type,x.category,x.categories,x.kind,x.section,x.vertical,x.source_type
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (type === "shopping") return /shop|shopping|product|produit|prix|price|commerce|store/.test(s) ||
+      x.price != null || x.currency != null || x.seller != null || x.brand != null;
+    if (type === "news") return /news|actualité|actualites|actualités|article|press|presse/.test(s) ||
+      x.publishedAt != null || x.published_at != null || x.date != null || x.pubDate != null;
+    return true;
+  }
+
+  function imageKey(raw) {
+    try {
+      const u = new URL(raw, location.origin);
+      u.hash = "";
+      ["w","width","h","height","size","resize","quality","q","fit","fm","format"].forEach(k => u.searchParams.delete(k));
+      return u.toString().toLowerCase();
+    } catch { return String(raw || "").split("#")[0].toLowerCase(); }
+  }
+
+  function uniqueImages(list) {
+    const seen = new Set();
+    return list.filter(x => {
+      const src = imageKey(x.image || x.imageUrl || x.thumbnail || x.thumbnailUrl || "");
+      if (!src || seen.has(src)) return false;
+      seen.add(src); return true;
+    });
+  }
+
+  function sortList(list) {
+    const mode = sort.value;
+    return [...list].sort((a,b) => {
+      if (mode === "title") return esc(a.title||a.name).localeCompare(esc(b.title||b.name), "fr");
+      if (mode === "domain") return domainOf(a.__url).localeCompare(domainOf(b.__url));
+      if (mode === "date") return String(b.date||b.publishedAt||b.published_at||b.pubDate||"").localeCompare(String(a.date||a.publishedAt||a.published_at||a.pubDate||""));
+      return b.__score - a.__score;
+    });
+  }
+
+  function el(tag, attrs={}, text="") {
+    const e = document.createElement(tag);
+    for (const [k,v] of Object.entries(attrs)) {
+      if (k === "class") e.className = v;
+      else if (k === "href") e.href = v;
+      else e.setAttribute(k,v);
+    }
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  function renderRecent() {
+    recentBox.replaceChildren();
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem("openweb-searches") || "[]"); } catch {}
+    if (!history.length) return;
+    const label = el("span", {}, "Déjà recherché :");
+    recentBox.append(label);
+    history.slice(0,6).forEach(q => {
+      const a = el("a", {href:"/search.html?q="+encodeURIComponent(q)}, q);
+      recentBox.append(a);
+    });
+  }
+
+  function saveSearch() {
+    if (!query) return;
+    let h=[]; try { h=JSON.parse(localStorage.getItem("openweb-searches")||"[]"); } catch {}
+    h=[query,...h.filter(x=>x.toLowerCase()!==query.toLowerCase())].slice(0,10);
+    localStorage.setItem("openweb-searches", JSON.stringify(h));
+  }
+
+  function setTabs() {
+    document.querySelectorAll(".navtab").forEach(a => {
+      const t=a.dataset.tab;
+      a.classList.toggle("active", t===tab);
+      a.href="/search.html?q="+encodeURIComponent(query)+(t==="web"?"":"&tab="+t);
+      a.addEventListener("click", () => { tab=t; page=1; });
+    });
+  }
+
+  function renderComingSoon(type) {
+    results.replaceChildren();
+    pagination.replaceChildren();
+    const box=el("div",{class:"coming-soon"});
+    const title=type==="shopping" ? "Shopping OpenWeb" : "Actualités OpenWeb";
+    const p1=type==="shopping"
+      ? "La recherche Shopping est en préparation."
+      : "La recherche Actualités est en préparation.";
+    const p2="Cette section sortira dans pas longtemps. Les résultats seront alimentés par le crawler OpenWeb.";
+    box.append(el("h2",{},title),el("p",{},p1),el("p",{},p2));
+    results.append(box);
+    summary.textContent="Fonctionnalité bientôt disponible";
+  }
+
+  function renderImages(list) {
+    const images = uniqueImages(list);
+    const start = (page - 1) * perPage;
+    const slice = images.slice(start, start + perPage);
+
+    results.replaceChildren();
+    if (!images.length) {
+      results.append(el("div",{class:"no-results"},"Aucune image trouvée."));
+      pagination.replaceChildren();
+      return;
     }
 
-    // 4. Contrôles de sécurité
-    const securityChecks = {
-        isDarkWebDomain: (url) => {
-            const darkwebPatterns = ['.onion', '.i2p', 'darknet', 'hidden'];
-            return darkwebPatterns.some(pattern => url.toLowerCase().includes(pattern));
-        },
-        isSuspiciousDomain: (url) => {
-            const suspiciousPatterns = ['scam', 'phishing', 'hack', 'crack', 'warez', 'malware', 'trojan', 'botnet', 'exploit'];
-            return suspiciousPatterns.some(pattern => url.toLowerCase().includes(pattern));
-        },
-        hasUnsafeContent: (content) => {
-            const unsafePatterns = ['password stealer', 'credit card', 'bank account', 'social security', 'identity theft'];
-            return unsafePatterns.some(pattern => content.toLowerCase().includes(pattern));
-        },
-        isSecureUrl: (url) => {
-            try {
-                return new URL(url).protocol === 'https:';
-            } catch {
-                return false;
-            }
-        }
+    const grid = el("div",{class:"image-grid"});
+    const frag = document.createDocumentFragment();
+
+    slice.forEach(x => {
+      const src = esc(x.image || x.imageUrl || x.thumbnail || x.thumbnailUrl);
+      const card = el("div",{class:"image-card",tabindex:"0"});
+      const frame = el("div",{class:"image-frame"});
+      const loading = el("div",{class:"image-loading"},"Chargement…");
+      const img = el("img",{alt:esc(x.title || x.name || "Image OpenWeb")});
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.referrerPolicy = "no-referrer";
+      img.src = src;
+
+      img.addEventListener("load", () => loading.remove(), {once:true});
+      img.addEventListener("error", () => {
+        frame.replaceChildren(el("div",{class:"image-error"},"Image indisponible"));
+      }, {once:true});
+
+      frame.append(loading,img);
+
+      const caption = el("div",{class:"image-caption"},
+        esc(x.title || x.name || domainOf(x.__url) || "Image"));
+      const domain = el("div",{class:"image-domain"},domainOf(x.__url));
+      caption.append(domain);
+      card.append(frame,caption);
+
+      const open = () => {
+        const modal = document.getElementById("modal");
+        document.getElementById("modal-image").src = src;
+        document.getElementById("modal-image").alt = img.alt;
+        modal.classList.add("open");
+      };
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      });
+      frag.append(card);
+    });
+
+    grid.append(frag);
+    results.append(grid);
+    renderPagination(images.length);
+  }
+
+  function renderWeb(list) {
+    const filtered=sortList(list);
+    const start=(page-1)*perPage, slice=filtered.slice(start,start+perPage);
+    results.replaceChildren();
+    if(!filtered.length){ results.append(el("div",{class:"no-results"},"Aucun résultat pour cette recherche.")); pagination.replaceChildren(); return; }
+    slice.forEach(x=>{
+      const card=el("article",{class:"result-card"});
+      const title=el("h2",{class:"result-title"});
+      const a=el("a",{href:x.__url||"#"},esc(x.title||x.name||x.__url));
+      a.target="_self";
+      title.append(a);
+      const url=el("div",{class:"result-url"},x.__url||"");
+      const desc=el("p",{class:"result-desc"},esc(x.description||x.snippet||x.content||x.text||""));
+      card.append(title,url,desc);
+      const meta=[];
+      if(x.date||x.publishedAt||x.published_at||x.pubDate) meta.push(String(x.date||x.publishedAt||x.published_at||x.pubDate));
+      if(x.source) meta.push(String(x.source));
+      if(meta.length) card.append(el("div",{class:"result-meta"},meta.join(" · ")));
+      results.append(card);
+    });
+    renderPagination(filtered.length);
+    if(params.get("lucky")==="1" && filtered[0]?.__url) location.href=filtered[0].__url;
+  }
+
+  function renderPagination(total) {
+    pagination.replaceChildren();
+    const pages=Math.ceil(total/perPage);
+    if(pages<=1) return;
+    const add=(label,p,disabled,current)=>{
+      const b=el("button",{type:"button"},label);
+      b.disabled=!!disabled; if(current)b.classList.add("current");
+      b.addEventListener("click",()=>{page=p; renderCurrent(); window.scrollTo({top:0,behavior:"smooth"});});
+      pagination.append(b);
     };
+    add("‹",Math.max(1,page-1),page===1,false);
+    const from=Math.max(1,page-2),to=Math.min(pages,page+2);
+    if(from>1){add("1",1,false,page===1); if(from>2) pagination.append(el("span",{},"…"));}
+    for(let p=from;p<=to;p++) add(String(p),p,false,p===page);
+    if(to<pages){if(to<pages-1)pagination.append(el("span",{},"…"));add(String(pages),pages,false,page===pages);}
+    add("›",Math.min(pages,page+1),page===pages,false);
+  }
 
-    // 5. Filtrage des données
-    const q = query.trim().toLowerCase();
-    const filtered = data.filter(item => {
-        if (!item.url) return false;
-        if (securityChecks.isDarkWebDomain(item.url) || 
-            securityChecks.isSuspiciousDomain(item.url) ||
-            securityChecks.hasUnsafeContent(item.content || '') ||
-            !securityChecks.isSecureUrl(item.url)) {
-            return false;
-        }
+  let data=[];
+  async function load() {
+    try {
+      const r=await fetch("/searchData.json",{cache:"no-store"});
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      const json=await r.json();
+      data=Array.isArray(json)?json:(Array.isArray(json.results)?json.results:[]);
+      saveSearch(); renderRecent(); setTabs(); renderCurrent();
+    } catch(e) {
+      results.replaceChildren(el("div",{class:"no-results"},"Impossible de charger les résultats."));
+      summary.textContent="Erreur de chargement";
+      console.error(e);
+    }
+  }
 
-        return (item.title && item.title.toLowerCase().includes(q)) ||
-               (item.description && item.description.toLowerCase().includes(q)) ||
-               (item.content && item.content.toLowerCase().includes(q));
+  function renderCurrent() {
+    setTabs();
+    page=Math.max(1,page);
+    if(tab==="shopping"){
+      const shop=dedupe(data.filter(x=>hasType(x,"shopping")));
+      if(shop.length) renderWeb(shop); else renderComingSoon("shopping");
+      return;
+    }
+    if(tab==="news"){
+      const news=dedupe(data.filter(x=>hasType(x,"news")));
+      if(news.length) renderWeb(news); else renderComingSoon("news");
+      return;
+    }
+    if(tab==="images"){
+      const matched=data.filter(x=>{
+        const hay=textOf(x).toLowerCase();
+        return !terms.length || terms.every(t=>hay.includes(t));
+      });
+      renderImages(dedupe(matched));
+      summary.textContent=`Images · ${uniqueImages(dedupe(matched)).length} résultat(s)`;
+      return;
+    }
+    const matched=data.filter(x=>{
+      const hay=textOf(x).toLowerCase();
+      return !terms.length || terms.every(t=>hay.includes(t));
     });
+    const list=dedupe(matched);
+    summary.textContent=`Environ ${list.length} résultat(s)`;
+    renderWeb(list);
+  }
 
-    if (loader) loader.style.display = 'none';
+  sort.addEventListener("change",()=>{page=1;renderCurrent();});
+  document.getElementById("modal-close").addEventListener("click",()=>document.getElementById("modal").classList.remove("open"));
+  document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")e.currentTarget.classList.remove("open")});
+  document.getElementById("search-form").addEventListener("submit",e=>{
+    e.preventDefault();
+    const q=input.value.trim();
+    location.href="/search.html?q="+encodeURIComponent(q)+(tab==="web"?"":"&tab="+tab);
+  });
 
-    // 6. Gestion du basculement d'onglets (Web / Images / etc.)
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        if (btn.dataset.type === currentTab) btn.classList.add('active');
-
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentTab = btn.dataset.type;
-            localStorage.setItem('searchTab', currentTab);
-            
-            renderCurrentView();
-        });
-    });
-
-    // 7. Fonction d'affichage principale selon l'onglet
-    function renderCurrentView() {
-        if (!filtered.length) {
-            resultsContainer.innerHTML = '<div style="padding:2rem;text-align:center;color:#888;font-size:1.2rem;">Aucun résultat trouvé.</div>';
-            return;
-        }
-
-        if (currentTab === 'images') {
-            renderImageResults(filtered);
-        } else if (currentTab === 'web') {
-            renderWebResults(filtered);
-        } else {
-            resultsContainer.innerHTML = '<div class="coming-soon" style="text-align:center;padding:2rem;color:#666;">Cette fonctionnalité sera bientôt disponible.</div>';
-        }
-    }
-
-    // 8. Rendu des résultats Web avec Pagination
-    function renderWebResults(items) {
-        const start = (page - 1) * resultsPerPage;
-        const paginatedResults = items.slice(start, start + resultsPerPage);
-        const totalPages = Math.ceil(items.length / resultsPerPage);
-
-        const resultsWrapper = document.createElement('div');
-        resultsWrapper.className = 'results-wrapper';
-        
-        paginatedResults.forEach((item, idx) => {
-            const div = document.createElement('div');
-            div.className = 'result-item';
-
-            let imgHtml = '';
-            if (item.image) {
-                imgHtml = `<img class="result-image" src="${item.image}" alt="Aperçu" loading="lazy" onerror="this.hidden=true">`;
-            }
-
-            let catHtml = '';
-            if (item.categories && item.categories.length) {
-                catHtml = `<div class="result-categories">${item.categories.map(cat =>
-                    `<span class="result-chip">${cat}</span>`
-                ).join('')}</div>`;
-            }
-
-            div.innerHTML = `
-                ${imgHtml}
-                <div class="result-content">
-                    <a class="result-title" href="${item.url}" target="_blank" rel="noopener">${item.title || item.url}</a>
-                    <span class="result-url">${item.url}</span>
-                    <div class="result-desc">${item.description || ''}</div>
-                    ${catHtml}
-                </div>
-            `;
-            resultsWrapper.appendChild(div);
-        });
-
-        resultsContainer.innerHTML = '';
-        resultsContainer.appendChild(resultsWrapper);
-        renderPagination(items.length, totalPages);
-    }
-
-    // 9. Rendu de la Galerie d'Images & Modale
-    function renderImageResults(items) {
-        resultsContainer.innerHTML = '';
-        const imageResults = items.filter(item => item.image);
-        
-        if (!imageResults.length) {
-            resultsContainer.innerHTML = '<div style="text-align:center;padding:2rem;">Aucune image disponible dans les résultats.</div>';
-            return;
-        }
-
-        const imageGrid = document.createElement('div');
-        imageGrid.className = 'image-results';
-
-        // Nettoyage de l'ancienne modale si elle existe déjà
-        const existingModal = document.querySelector('.image-modal');
-        const existingOverlay = document.querySelector('.modal-overlay');
-        if (existingModal) existingModal.remove();
-        if (existingOverlay) existingOverlay.remove();
-
-        const modal = document.createElement('div');
-        modal.className = 'image-modal';
-        modal.innerHTML = `
-            <button class="modal-close" aria-label="Fermer">&times;</button>
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 class="modal-title"></h3>
-                </div>
-                <div class="modal-image-container">
-                    <img class="modal-image" src="" alt="">
-                </div>
-                <div class="similar-images"></div>
-            </div>
-        `;
-        const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay';
-        
-        document.body.appendChild(modal);
-        document.body.appendChild(overlay);
-
-        const closeModal = () => {
-            modal.classList.remove('active');
-            overlay.classList.remove('active');
-            document.body.style.overflow = '';
-        };
-
-        modal.querySelector('.modal-close').onclick = closeModal;
-        overlay.onclick = closeModal;
-
-        const openModal = (item) => {
-            const modalImg = modal.querySelector('.modal-image');
-            const modalTitle = modal.querySelector('.modal-title');
-            
-            modalImg.src = item.image;
-            modalImg.alt = item.title || '';
-            modalTitle.textContent = item.title || item.url;
-            
-            const similarImages = imageResults
-                .filter(img => img !== item)
-                .sort(() => 0.5 - Math.random())
-                .slice(0, 6);
-
-            const similarContainer = modal.querySelector('.similar-images');
-            similarContainer.innerHTML = similarImages
-                .map(img => `
-                    <div class="similar-image">
-                        <img src="${img.image}" alt="${img.title || ''}" loading="lazy">
-                    </div>
-                `).join('');
-
-            similarContainer.querySelectorAll('.similar-image').forEach((simImg, i) => {
-                simImg.onclick = (e) => {
-                    e.stopPropagation();
-                    openModal(similarImages[i]);
-                };
-            });
-
-            modal.classList.add('active');
-            overlay.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        };
-
-        imageResults.forEach((item) => {
-            const div = document.createElement('div');
-            div.className = 'image-item';
-            div.innerHTML = `
-                <img src="${item.image}" alt="${item.title || ''}" loading="lazy">
-                <div class="image-info">
-                    <div>${item.title || 'Sans titre'}</div>
-                    <small>${item.url}</small>
-                </div>
-            `;
-            div.onclick = () => openModal(item);
-            imageGrid.appendChild(div);
-        });
-
-        resultsContainer.appendChild(imageGrid);
-    }
-
-    // 10. Générateur de Pagination
-    function renderPagination(totalItems, totalPages) {
-        if (totalPages <= 1) return;
-
-        const paginationDiv = document.createElement('div');
-        paginationDiv.className = 'pagination-container';
-
-        const resultCount = document.createElement('div');
-        resultCount.className = 'result-count';
-        resultCount.textContent = `${totalItems} résultats - Page ${page} sur ${totalPages}`;
-        paginationDiv.appendChild(resultCount);
-
-        const paginationNav = document.createElement('div');
-        paginationNav.className = 'pagination';
-
-        if (page > 1) {
-            const prevBtn = document.createElement('a');
-            prevBtn.href = `/search.html?q=${encodeURIComponent(query)}&page=${page - 1}`;
-            prevBtn.className = 'page-btn';
-            prevBtn.innerHTML = '&larr;';
-            paginationNav.appendChild(prevBtn);
-        }
-
-        for (let i = 1; i <= totalPages; i++) {
-            if (i === 1 || i === totalPages || (i >= page - 2 && i <= page + 2)) {
-                const pageBtn = document.createElement('a');
-                pageBtn.href = `/search.html?q=${encodeURIComponent(query)}&page=${i}`;
-                pageBtn.className = `page-btn ${i === page ? 'active' : ''}`;
-                pageBtn.textContent = i;
-                paginationNav.appendChild(pageBtn);
-            } else if (i === page - 3 || i === page + 3) {
-                const dots = document.createElement('span');
-                dots.className = 'pagination-ellipsis';
-                dots.textContent = '...';
-                paginationNav.appendChild(dots);
-            }
-        }
-
-        if (page < totalPages) {
-            const nextBtn = document.createElement('a');
-            nextBtn.href = `/search.html?q=${encodeURIComponent(query)}&page=${page + 1}`;
-            nextBtn.className = 'page-btn';
-            nextBtn.innerHTML = '&rarr;';
-            paginationNav.appendChild(nextBtn);
-        }
-
-        paginationDiv.appendChild(paginationNav);
-        resultsContainer.appendChild(paginationDiv);
-    }
-
-    // Lancement initial de la vue
-    renderCurrentView();
-});
+  load();
+})();

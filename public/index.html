@@ -1,125 +1,46 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="fr">
 <head>
-    <title>Bienvenue sur OpenWeb</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css?family=Roboto:400,500,700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenWeb</title>
+<link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-    <div class="search-container">
-        <div class="search-logo" tabindex="0">
-            Open <span style="color: var(--primary); text-decoration: none;">Web</span>
-        </div>
-        <div class="search-box">
-            <form id="mainSearchForm" autocomplete="off">
-                <input type="text" 
-                       class="search-input" 
-                       name="q"
-                       placeholder="Rechercher sur Open Web"
-                       autocomplete="off"
-                       autofocus>
-            </form>
-        </div>
-    </div>
-    <footer class="footer">
-        <span>© 2024 Open Web.</span>
-    </footer>
-    <script>
-    document.getElementById('mainSearchForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const query = e.target.q.value.trim();
-        if (!query) return;
-        document.querySelector('.search-container').style.transition = 'all 0.5s cubic-bezier(.4,0,.2,1)';
-        document.querySelector('.search-container').style.transform = 'scale(0.98)';
-        setTimeout(() => {
-            window.location.href = `/search.html?q=${encodeURIComponent(query)}`;
-        }, 250);
-    });
-    document.querySelector('.search-logo').addEventListener('mouseenter', e => {
-        e.target.classList.add('logo-bounce');
-    });
-    document.querySelector('.search-logo').addEventListener('animationend', e => {
-        e.target.classList.remove('logo-bounce');
-    });
-
-    const resultsDiv = document.getElementById('results');
-    const paginationDiv = document.getElementById('pagination');
-    const searchInput = document.getElementById('searchInput');
-    const searchBtn = document.getElementById('searchBtn');
-    let currentPage = 1;
-    let lastQuery = '';
-
-    function fetchResults(query, page = 1) {
-      fetch(`/api/search?q=${encodeURIComponent(query)}&page=${page}`)
-        .then(res => res.json())
-        .then(data => {
-          resultsDiv.innerHTML = '';
-          if (!data.results || data.results.length === 0) {
-            resultsDiv.innerHTML = '<p>Aucun résultat.</p>';
-            paginationDiv.innerHTML = '';
-            return;
-          }
-          data.results.forEach(item => {
-            const el = document.createElement('div');
-            el.className = 'result-item';
-            el.innerHTML = `
-              <a href="${item.url}" target="_blank"><strong>${item.title || item.url}</strong></a>
-              <p>${item.description || ''}</p>
-              <small>${item.url}</small>
-            `;
-            resultsDiv.appendChild(el);
-          });
-          renderPagination(data.page, data.totalPages);
-        });
-    }
-
-    function renderPagination(page, totalPages) {
-      paginationDiv.innerHTML = '';
-      if (totalPages <= 1) return;
-      const maxButtons = 7;
-      let start = Math.max(1, page - Math.floor(maxButtons / 2));
-      let end = Math.min(totalPages, start + maxButtons - 1);
-      if (end - start < maxButtons - 1) start = Math.max(1, end - maxButtons + 1);
-
-      if (page > 1) {
-        const prev = document.createElement('button');
-        prev.textContent = 'Précédent';
-        prev.onclick = () => gotoPage(page - 1);
-        paginationDiv.appendChild(prev);
-      }
-      for (let i = start; i <= end; i++) {
-        const btn = document.createElement('button');
-        btn.textContent = i;
-        if (i === page) btn.disabled = true;
-        btn.onclick = () => gotoPage(i);
-        paginationDiv.appendChild(btn);
-      }
-      if (page < totalPages) {
-        const next = document.createElement('button');
-        next.textContent = 'Suivant';
-        next.onclick = () => gotoPage(page + 1);
-        paginationDiv.appendChild(next);
-      }
-    }
-
-    function gotoPage(page) {
-      currentPage = page;
-      fetchResults(lastQuery, page);
-    }
-
-    searchBtn.onclick = () => {
-      lastQuery = searchInput.value.trim();
-      currentPage = 1;
-      fetchResults(lastQuery, 1);
-    };
-
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') searchBtn.onclick();
-    });
-    </script>
-    <style>
-    #results .result-item { margin-bottom: 1em; }
-    #pagination button { margin: 0 2px; }
-    </style>
+<body class="home">
+<header class="home-top">
+  <a href="/search.html?tab=images">Images</a>
+  <a href="/search.html?tab=shopping">Shopping</a>
+  <a href="/search.html?tab=news">Actualités</a>
+</header>
+<main class="home-main">
+  <div class="logo">OpenWeb</div>
+  <div class="home-sub">Recherche Web simple, rapide et sans doublons</div>
+  <form class="home-search" action="/search.html" method="get">
+    <input name="q" id="home-query" type="search" autocomplete="off" autofocus aria-label="Recherche">
+    <button type="submit" aria-label="Rechercher">
+<svg class="icon search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+</button>
+  </form>
+  <div class="home-actions">
+    <button type="submit" form="none">Recherche OpenWeb</button>
+    <button type="button" id="lucky">J'ai de la chance</button>
+  </div>
+  <div class="quick">
+    <a href="/search.html?tab=web">Web</a>
+    <a href="/search.html?tab=images">Images</a>
+    <a href="/search.html?tab=shopping">Shopping</a>
+    <a href="/search.html?tab=news">Actualités</a>
+  </div>
+</main>
+<footer class="home-footer">© OpenWeb by create</footer>
+<script>
+const form=document.querySelector('.home-search');
+document.querySelector('.home-actions button[type="submit"]')?.addEventListener('click',()=>form.requestSubmit());
+document.getElementById('lucky').addEventListener('click',()=>{
+  const q=document.getElementById('home-query').value.trim();
+  if(q) location.href='/search.html?q='+encodeURIComponent(q)+'&lucky=1';
+  else document.getElementById('home-query').focus();
+});
+</script>
 </body>
 </html>
