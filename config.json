@@ -1,0 +1,26 @@
+{
+  "maxDepth": 10,
+  "allowedDomains": [],
+  "seeds": [
+    "https://news.ycombinator.com",
+    "https://fr.wikipedia.org/wiki/Sp%C3%A9cial:Page_au_hasard",
+    "https://en.wikipedia.org/wiki/Special:Random",
+    "https://github.com/trending",
+    "https://www.reddit.com/r/all/",
+    "https://www.lemonde.fr",
+    "https://www.bbc.com",
+    "https://www.nytimes.com",
+    "https://www.nature.com",
+    "https://arxiv.org/list/cs/recent",
+    "https://dmoz-odp.org",
+    "https://www.w3.org",
+    "https://archive.org",
+    "https://www.gutenberg.org",
+    "https://news.google.com",
+    "https://www.producthunt.com",
+    "https://dev.to",
+    "https://medium.com",
+    "https://www.imdb.com",
+    "https://www.open.edu/openlearn/"
+  ]
+}

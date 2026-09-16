@@ -1,0 +1,4 @@
+node_modules/
+crawler_state.json
+package-lock.json
+public/searchData.json

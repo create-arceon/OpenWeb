@@ -1,21 +1,25 @@
-const Crawler = require('./crawler');
+const fs = require('fs');
+const path = require('path');
+const InfiniteCrawler = require('./crawler');
 
-// ajouter vos urls ici
 async function initCrawler() {
-    const sitesToCrawl = [
-        
-    ];
-    
-    const crawler = new Crawler();
-    
-    for (const url of sitesToCrawl) {
-        try {
-            await crawler.crawlPage(url);
-            console.log(`Crawled: ${url}`);
-        } catch (err) {
-            console.error(`Error crawling ${url}:`, err);
-        }
+    const configPath = path.join(__dirname, 'config.json');
+    if (!fs.existsSync(configPath)) {
+        console.error("Fichier config.json introuvable.");
+        return;
     }
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const crawler = new InfiniteCrawler(config);
+
+    // Sauvegarde en cas d'interruption (CTRL+C)
+    process.on('SIGINT', () => {
+        console.log("\nInterruption detectee. Sauvegarde de l'etat...");
+        crawler.saveState();
+        process.exit(0);
+    });
+
+    await crawler.start();
 }
 
 initCrawler().catch(console.error);

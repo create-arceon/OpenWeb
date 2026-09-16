@@ -49,13 +49,11 @@
     <main>
         <section id="results" class="search-results">
             <div id="loader" class="loader"></div>
-            // Les résultats seront insérés ici
         </section>
     </main>
     <footer class="footer">
         <span>© 2024 Open Web. Résultats issus de données publiques.</span>
     </footer>
-    // Scripts
     <script src="security.js" type="module"></script>
     <script src="search.js" type="module"></script>
     <script>
@@ -83,11 +81,17 @@
         btn.addEventListener('click', e => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            if (btn.dataset.type !== 'web') {
-                document.getElementById('results').innerHTML = '<div class="error">Ce type de recherche n\'est pas encore disponible.</div>';
+            
+            const resultsContainer = document.getElementById('results');
+            const type = btn.dataset.type;
+
+            if (type === 'images') {
+                resultsContainer.className = 'image-results';
+            } else if (type === 'web') {
+                resultsContainer.className = 'search-results';
             } else {
-                const q = document.getElementById('searchInput').value;
-                if (q) window.dispatchEvent(new Event('search:rerun'));
+                resultsContainer.className = 'search-results';
+                resultsContainer.innerHTML = '<div class="result-desc">Ce type de recherche n\'est pas encore disponible.</div>';
             }
         });
     });
