@@ -88,18 +88,51 @@
     try {
       const u = new URL(raw, location.origin);
       u.hash = "";
-      ["w","width","h","height","size","resize","quality","q","fit","fm","format"].forEach(k => u.searchParams.delete(k));
+      ["w","width","h","height","size","resize","quality","q","fit","fm","format",
+       "crop","auto","dpr","ixlib","ixid"].forEach(k => u.searchParams.delete(k));
       return u.toString().toLowerCase();
     } catch { return String(raw || "").split("#")[0].toLowerCase(); }
   }
 
+  function imageSource(x) {
+    return esc(x.image || x.imageUrl || x.thumbnail || x.thumbnailUrl || x.src || "");
+  }
+
+  function imageText(x) {
+    return [
+      x.title,x.name,x.alt,x.description,x.snippet,x.category,x.categories,
+      x.tags,x.keywords,x.brand,x.source,domainOf(x.__url)
+    ].filter(Boolean).join(" ").toLowerCase();
+  }
+
+  function tokens(s) {
+    return new Set(String(s || "").toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .split(/[^a-z0-9]+/).filter(w => w.length >= 3));
+  }
+
+  function similarScore(a,b) {
+    const A=tokens(imageText(a)), B=tokens(imageText(b));
+    let common=0;
+    A.forEach(t=>{if(B.has(t)) common++;});
+    const titleA=tokens(a.title||a.name), titleB=tokens(b.title||b.name);
+    let titleCommon=0;
+    titleA.forEach(t=>{if(titleB.has(t)) titleCommon++;});
+    return common + titleCommon*2 + (domainOf(a.__url)===domainOf(b.__url) ? 0.5 : 0);
+  }
+
   function uniqueImages(list) {
-    const seen = new Set();
-    return list.filter(x => {
-      const src = imageKey(x.image || x.imageUrl || x.thumbnail || x.thumbnailUrl || "");
-      if (!src || seen.has(src)) return false;
-      seen.add(src); return true;
-    });
+    const seenImages=new Set(), seenPages=new Set(), out=[];
+    for(const x of list){
+      const src=imageKey(imageSource(x));
+      if(!src || seenImages.has(src)) continue;
+      const pageUrl=normalizeUrl(x.url||x.link||x.href||"");
+      const pageKey=pageUrl || src;
+      if(seenPages.has(pageKey)) continue;
+      seenImages.add(src); seenPages.add(pageKey);
+      out.push({...x,__imageKey:src});
+    }
+    return out;
   }
 
   function sortList(list) {
@@ -108,7 +141,16 @@
       if (mode === "title") return esc(a.title||a.name).localeCompare(esc(b.title||b.name), "fr");
       if (mode === "domain") return domainOf(a.__url).localeCompare(domainOf(b.__url));
       if (mode === "date") return String(b.date||b.publishedAt||b.published_at||b.pubDate||"").localeCompare(String(a.date||a.publishedAt||a.published_at||a.pubDate||""));
-      return b.__score - a.__score;
+      // Keep the normal relevance signal, but add a small diversity boost
+      // to lesser-known/new domains so the first page does not become only
+      // the biggest sites. This is not a reputation score.
+      const diversityBoost = x => {
+        const d=domainOf(x.__url);
+        if(!d) return 0;
+        const known=/^(google|youtube|facebook|instagram|wikipedia|amazon|reddit|x|twitter|microsoft|apple|github)\./i.test(d) ? 0 : 1.5;
+        return known;
+      };
+      return (b.__score+diversityBoost(b)) - (a.__score+diversityBoost(a));
     });
   }
 
@@ -166,54 +208,92 @@
     summary.textContent="Fonctionnalité bientôt disponible";
   }
 
-  function renderImages(list) {
-    const images = uniqueImages(list);
-    const start = (page - 1) * perPage;
-    const slice = images.slice(start, start + perPage);
+  function renderSimilar(current, allImages) {
+    const candidates=allImages
+      .filter(x=>x.__imageKey!==current.__imageKey)
+      .map(x=>({...x,__similar:similarScore(current,x)}))
+      .filter(x=>x.__similar>0)
+      .sort((a,b)=>b.__similar-a.__similar)
+      .slice(0,8);
 
+    const wrap=el("div",{class:"similar-wrap"});
+    wrap.append(el("h3",{class:"similar-title"},"Images ressemblantes"));
+    if(!candidates.length){
+      wrap.append(el("div",{class:"similar-empty"},"Aucune image ressemblante disponible."));
+      return wrap;
+    }
+
+    const grid=el("div",{class:"similar-grid"});
+    candidates.forEach(x=>{
+      const card=el("button",{class:"similar-card",type:"button"});
+      const img=el("img",{alt:esc(x.title||x.name||"Image ressemblante")});
+      img.loading="lazy"; img.decoding="async"; img.referrerPolicy="no-referrer";
+      img.src=imageSource(x);
+      const label=el("span",{},esc(x.title||x.name||domainOf(x.__url)||"Image"));
+      card.append(img,label);
+      card.addEventListener("click",()=>{
+        document.getElementById("modal-image").src=imageSource(x);
+        document.getElementById("modal-image").alt=img.alt;
+        document.getElementById("modal").classList.add("open");
+      });
+      grid.append(card);
+    });
+    wrap.append(grid);
+    return wrap;
+  }
+
+  function openImageViewer(current, allImages){
+    const modal=document.getElementById("modal");
+    const image=document.getElementById("modal-image");
+    image.src=imageSource(current);
+    image.alt=esc(current.title||current.name||"Image OpenWeb");
+
+    const oldSimilar=document.getElementById("modal-similar");
+    if(oldSimilar) oldSimilar.remove();
+    const box=document.querySelector(".modal-box");
+    const similar=renderSimilar(current,allImages);
+    similar.id="modal-similar";
+    box.append(similar);
+    modal.classList.add("open");
+  }
+
+  function renderImages(list) {
+    const images=uniqueImages(list);
+    const start=(page-1)*perPage;
+    const slice=images.slice(start,start+perPage);
     results.replaceChildren();
-    if (!images.length) {
+
+    if(!images.length){
       results.append(el("div",{class:"no-results"},"Aucune image trouvée."));
       pagination.replaceChildren();
       return;
     }
 
-    const grid = el("div",{class:"image-grid"});
-    const frag = document.createDocumentFragment();
+    const grid=el("div",{class:"image-grid"});
+    const frag=document.createDocumentFragment();
 
-    slice.forEach(x => {
-      const src = esc(x.image || x.imageUrl || x.thumbnail || x.thumbnailUrl);
-      const card = el("div",{class:"image-card",tabindex:"0"});
-      const frame = el("div",{class:"image-frame"});
-      const loading = el("div",{class:"image-loading"},"Chargement…");
-      const img = el("img",{alt:esc(x.title || x.name || "Image OpenWeb")});
-      img.loading = "lazy";
-      img.decoding = "async";
-      img.referrerPolicy = "no-referrer";
-      img.src = src;
-
-      img.addEventListener("load", () => loading.remove(), {once:true});
-      img.addEventListener("error", () => {
+    slice.forEach(x=>{
+      const src=imageSource(x);
+      const card=el("div",{class:"image-card",tabindex:"0"});
+      const frame=el("div",{class:"image-frame"});
+      const loading=el("div",{class:"image-loading"},"Chargement…");
+      const img=el("img",{alt:esc(x.title||x.name||"Image OpenWeb")});
+      img.loading="lazy"; img.decoding="async"; img.referrerPolicy="no-referrer";
+      img.src=src;
+      img.addEventListener("load",()=>loading.remove(),{once:true});
+      img.addEventListener("error",()=>{
         frame.replaceChildren(el("div",{class:"image-error"},"Image indisponible"));
-      }, {once:true});
-
+      },{once:true});
       frame.append(loading,img);
 
-      const caption = el("div",{class:"image-caption"},
-        esc(x.title || x.name || domainOf(x.__url) || "Image"));
-      const domain = el("div",{class:"image-domain"},domainOf(x.__url));
-      caption.append(domain);
+      const caption=el("div",{class:"image-caption"},esc(x.title||x.name||domainOf(x.__url)||"Image"));
+      caption.append(el("div",{class:"image-domain"},domainOf(x.__url)));
       card.append(frame,caption);
 
-      const open = () => {
-        const modal = document.getElementById("modal");
-        document.getElementById("modal-image").src = src;
-        document.getElementById("modal-image").alt = img.alt;
-        modal.classList.add("open");
-      };
-      card.addEventListener("click", open);
-      card.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      const open=()=>openImageViewer(x,images);
+      card.addEventListener("click",open);
+      card.addEventListener("keydown",e=>{
+        if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}
       });
       frag.append(card);
     });
@@ -312,8 +392,15 @@
   }
 
   sort.addEventListener("change",()=>{page=1;renderCurrent();});
-  document.getElementById("modal-close").addEventListener("click",()=>document.getElementById("modal").classList.remove("open"));
-  document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")e.currentTarget.classList.remove("open")});
+  function closeModal(){
+    const modal=document.getElementById("modal");
+    modal.classList.remove("open");
+    const similar=document.getElementById("modal-similar");
+    if(similar) similar.remove();
+  }
+  document.getElementById("modal-close").addEventListener("click",closeModal);
+  document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal()});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal()});
   document.getElementById("search-form").addEventListener("submit",e=>{
     e.preventDefault();
     const q=input.value.trim();

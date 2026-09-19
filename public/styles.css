@@ -107,3 +107,16 @@ button,input,select{font:inherit}
  .results-logo{display:none}.image-grid{grid-template-columns:repeat(2,1fr)}
  .image-frame,.image-loading,.image-error{height:135px}
 }
+
+/* Similar images */
+.modal-box{width:min(1100px,92vw);overflow:auto}
+.similar-wrap{border-top:1px solid #ddd;margin-top:10px;padding-top:9px}
+.similar-title{font-size:13px;font-weight:normal;color:#555;margin:0 0 8px}
+.similar-grid{display:grid;grid-template-columns:repeat(8,minmax(70px,1fr));gap:7px}
+.similar-card{border:1px solid #ddd;background:#fff;padding:3px;cursor:pointer;text-align:left;min-width:0}
+.similar-card:hover{border-color:#9eb8e8;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.similar-card img{display:block;width:100%;height:70px;object-fit:cover;background:#f2f3f4}
+.similar-card span{display:block;font-size:10px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 2px 2px}
+.similar-empty{font-size:12px;color:#888}
+@media(max-width:900px){.similar-grid{grid-template-columns:repeat(5,1fr)}}
+@media(max-width:600px){.similar-grid{grid-template-columns:repeat(4,1fr)}.similar-card img{height:60px}}
