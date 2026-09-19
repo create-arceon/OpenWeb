@@ -315,7 +315,7 @@
       a.target="_self";
       title.append(a);
       const url=el("div",{class:"result-url"},x.__url||"");
-      const desc=el("p",{class:"result-desc"},esc(x.description||x.snippet||x.content||x.text||""));
+      const desc=el("p",{class:"result-desc"},esc((x.description||x.snippet||x.content||x.text||"").substring(0, 150) + (x.description||x.snippet||x.content||x.text||"").length > 150 ? "..." : ""));
       card.append(title,url,desc);
       const meta=[];
       if(x.date||x.publishedAt||x.published_at||x.pubDate) meta.push(String(x.date||x.publishedAt||x.published_at||x.pubDate));
